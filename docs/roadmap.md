@@ -1,4 +1,5 @@
 ## Roadmap
+- [X] freeze v0 assessment contract and mandatory automated test matrix in `README.md`
 - [X] investigate source data returned from the two APIs
 - [X] pre-code documentation:
   - [X] architectural decisions
@@ -6,15 +7,16 @@
   - [X] project flow
   - [X] roadmap
   - [X] AGENTS.md
-- [ ] PSC extraction logic:
-  - [ ] query the company's 'officers' endpoint
+- [ ] subject extraction logic:
+  - [ ] query the company's officers and PSC endpoints
   - [ ] do safety checks on the returned list:
     - [ ] error handling
 	- [ ] enforce any limits
   - [ ] clean and format into structured data
-- [ ] Vett pipeline:
-  - [ ] break the list of PSCs into individual API requests
-  - [ ] async/polling strategy (if we hit any rate limits)
+- [ ] Vett pipeline implementation:
+  - [ ] break selected subjects into individual API requests
+  - [ ] implement the single local worker and bounded assessment/subject queues
+  - [ ] implement the rate limiter, retry policy, and fake-clock test scenarios
 - [ ] user response shape
 - [ ] demo searches
 - [ ] post-code documentation:
