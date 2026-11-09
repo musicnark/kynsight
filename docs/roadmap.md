@@ -18,5 +18,13 @@
 - [ ] user response shape
 - [ ] demo searches
 - [ ] post-code documentation:
-  - [ ] how-to/getting-started guides
-  - [ ] limitations/what's needed for a production-ready version
+  - [ ] README
+	- [ ] what problem does KynSight solve?
+	- [ ] 60 second workflow explanation
+	- [ ] architecture/data flow
+	- [ ] how-to/get-started guide
+	- [ ] copy/paste-able examples with example responses
+	- [ ] how to run tests/type checks
+    - [ ] limitations/what's needed for a production-ready version
+  - [ ] assignment writeup
+  

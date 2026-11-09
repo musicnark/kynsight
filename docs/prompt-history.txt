@@ -1,0 +1,2 @@
+When complete, use this to export prompt history:
+opencode export SESSION_ID --sanitize > docs/ai-prompt-history.json
