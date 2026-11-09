@@ -1,0 +1,35 @@
+{
+  "name": "kynsight",
+  "version": "1.0.0",
+  "description": "KynSight is a demo compliance-screening aid for brokers and underwriters. It retrieves company, officer, and persons-with-significant-control (PSC) records from Companies House, screens relevant people through Vett, and returns a structured report for human review.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "node --env-file=.env --import=tsx --watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file=.env dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/musicnark/kynsight.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/musicnark/kynsight/issues"
+  },
+  "homepage": "https://github.com/musicnark/kynsight#readme",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
