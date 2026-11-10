@@ -13,12 +13,12 @@
     - [X] error handling
 	- [X] enforce any limits
   - [X] clean and format into structured data
-- [ ] Vett pipeline implementation:
-  - [ ] break selected subjects into individual API requests
-  - [ ] implement the single local worker and bounded assessment/subject queues
-  - [ ] implement the rate limiter, retry policy, and fake-clock test scenarios
-- [ ] user response shape
-- [ ] demo searches
+- [X] Vett pipeline implementation:
+  - [X] break selected subjects into individual API requests
+  - [X] implement the single local worker and bounded assessment/subject queues
+  - [X] implement the rate limiter, retry policy, and fake-clock test scenarios
+- [X] user response shape
+- [X] demo searches
 - [ ] post-code documentation:
   - [ ] README
 	- [ ] what problem does KynSight solve?
