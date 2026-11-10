@@ -436,9 +436,13 @@ GET: https://api.company-information.service.gov.uk/company/04092583/officers
 ### Vett
 
 E.g.,
-```text
-POST: https://global-sanctions-export-control-screener.p.rapidapi.com/screen/all
---data '{"name":"POTANIN, Vladimir","threshold":85}'
+```sh
+curl --request POST \
+  --url https://global-sanctions-export-control-screener.p.rapidapi.com/screen/all \
+  --header "Content-Type: application/json" \
+  --header "x-rapidapi-host: global-sanctions-export-control-screener.p.rapidapi.com" \
+  --header "x-rapidapi-key: $RAPIDAPI_KEY" \
+  --data '{"name":"POTANIN, Vladimir","threshold":85}'
 ```
 
 #### Succesful Responses
@@ -550,6 +554,60 @@ POST: https://global-sanctions-export-control-screener.p.rapidapi.com/screen/all
 
 ```json
 {
+  "detail": [
+    {
+      "type": "greater_than_equal",
+      "loc": [
+        "body",
+        "threshold"
+      ],
+      "msg": "Input should be greater than or equal to 50",
+      "input": -1,
+      "ctx": {
+        "ge": 50
+      }
+    }
+  ]
+}
+```
+
+```json
+{
+  "detail": [
+    {
+      "type": "less_than_equal",
+      "loc": [
+        "body",
+        "threshold"
+      ],
+      "msg": "Input should be less than or equal to 100",
+      "input": 99999999,
+      "ctx": {
+        "le": 100
+      }
+    }
+  ]
+}
+```
+
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": [
+        "body",
+        "name"
+      ],
+      "msg": "Field required",
+      "input": {}
+    }
+  ]
+}
+```
+
+```json
+{
   "message": "You have exceeded the rate limit per minute for your plan, BASIC, by the API provider"
 }
 ```
@@ -558,7 +616,7 @@ POST: https://global-sanctions-export-control-screener.p.rapidapi.com/screen/all
 
 This is the frozen v0 contract for the KynSight assessment response. The mandatory automated test matrix below is part of the contract. Implementation may revise this contract only when a concrete implementation result, test result, or verified provider response exposes a problem.
 
-Vett documents a synchronous `POST /screen/all` request that returns a unified screening result. `PENDING` is therefore a KynSight-local queue state, not a Vett job state. The public Vett documentation does not currently provide a stable response schema, status contract, timeout guidance, or error schema; the normalized result fields below must be verified against a real response before implementation is finalized.
+The live RapidAPI response shown in the Vett examples above is authoritative for the adapter. It accepts only the exact `input`, `is_match`, `matches`, `list_dates`, and `screened_at` response shape shown there; `PENDING` is a KynSight-local queue state, not a Vett job state. Vett HTTP error responses are handled by the client and are never passed to the successful-response adapter.
 
 ### Subject Selection
 
@@ -781,13 +839,14 @@ Vett-specific response fields should be mapped through a dedicated adapter into 
 
 - `NO_MATCH`: only when Vett returns an explicit, validated negative result.
 - `POSSIBLE_MATCH`: only when Vett returns an explicit, validated possible-match or match finding that requires human review.
-- `INDETERMINATE`: when the Vett response is valid but inconclusive and does not establish either a negative or possible match.
 
-Missing, malformed, or otherwise schema-invalid Vett data must remain an explicit screening error. It must never be mapped to `NO_MATCH` or `INDETERMINATE`. The adapter should preserve enough validated provider evidence and source metadata for human review without exposing an uncontrolled provider payload as the public contract.
+Vett does not currently provide a verified inconclusive state in the response contract used by KynSight, and inferring such a state is outside of the scope of v0. So, v0 does not expose `INDETERMINATE`. Valid borderline matches remain `POSSIBLE_MATCH` for human review. Missing, malformed, or contradictory data remains an explicit screening error, and must not be mapped to either outcome.
+
+Missing, malformed, or otherwise schema-invalid Vett data must remain an explicit screening error. It must never be mapped to `NO_MATCH`. The adapter should preserve enough validated provider evidence and source metadata for human review without exposing an uncontrolled provider payload as the public contract.
 
 ### Example Responses
 
-The `outcome` values below are KynSight-normalized examples, not claims about literal Vett field names. `INDETERMINATE` is also valid for a schema-valid but inconclusive Vett result.
+The Vett response shape above is authoritative. The `outcome` values below are KynSight-normalized values derived only from a fully validated Vett response.
 
 #### Pending: Corporate PSC Fallback
 
@@ -1002,19 +1061,19 @@ Retry-After: 30
 
 Every scenario must assert the HTTP status, the response headers that KynSight owns, and the JSON response body. All JSON responses must include `Content-Type: application/json`. Queue and rate-limit scenarios must use mocked Vett responses and a fake clock; they must not consume real Vett requests.
 
-| ID | Scenario | Required HTTP assertions | Required JSON assertions |
-| --- | --- | --- | --- |
-| T01 | Assessment has queued or in-progress subjects | `202 Accepted`; `Content-Type: application/json` | `status: PENDING`; progress counts; selected subjects retain `QUEUED` or `IN_PROGRESS` state; completed subjects remain present |
-| T02 | All selected subjects complete successfully | `200 OK`; `Content-Type: application/json` | `status: COMPLETE`; `partial: false`; every selected subject has a terminal successful result |
-| T03 | All selected subjects reach terminal state with one or more permanent subject errors | `200 OK`; `Content-Type: application/json` | `status: COMPLETE`; `partial: true`; errors remain attached to affected subjects; no assessment-level error is created |
-| T04 | Assessment-level Companies House or provider configuration failure | `502 Bad Gateway`; `Content-Type: application/json` | `status: ERROR`; assessment-level error code and details; any completed subject results are preserved |
-| T05 | Assessment cannot be recovered after process-local restart | `404 Not Found`; `Content-Type: application/json` | `status: ERROR`; `ASSESSMENT_NOT_FOUND`; no fabricated screening results |
-| T06 | Active and queued assessment/subject capacity is full | `503 Service Unavailable`; `Content-Type: application/json`; include `Retry-After` only when KynSight knows a reliable retry interval | `status: ERROR`; `QUEUE_CAPACITY_EXCEEDED`; `retryable: true`; error details explain that capacity is full |
-| T07 | Short-term Vett rate limit | Initial snapshot uses `202 Accepted` and `Content-Type: application/json`; no extra rate-limit header is assumed unless KynSight owns one | Subject remains `QUEUED`; `status: PENDING`; `retryable: true`; `nextAttemptAt` is present when known; no `NO_MATCH` result; fake-clock advancement causes the retry and eventual completion |
-| T08 | Vett `5xx` with retry then success or exhausted retry budget | Assert the appropriate `202`/`200` snapshot status and `Content-Type: application/json` at each request | `Retry-After` is respected when supplied; after exhausted retries, the subject has a terminal error while other subjects continue; a fully terminal assessment is `COMPLETE` and `partial: true` |
-| T09 | Vett returns a malformed successful response | `200 OK`; `Content-Type: application/json` when the assessment otherwise reaches terminal state | Affected subject has `VETT_MALFORMED_RESPONSE`; no retry; no `NO_MATCH` or `INDETERMINATE` outcome is produced |
-| T10 | Longer queue across multiple rate-limit windows | Use a test-only queue-cap override to simulate 50 and 100 subjects, mocked Vett responses, and a fake clock; make no real Vett requests | Assert at most 10 request starts per rolling 60-second window, correct queue progression, preserved results, and final `COMPLETE`/`partial` body semantics; the live cap remains 20 |
-| T11 | Invalid client input | `400 Bad Request`; `Content-Type: application/json` | Structured validation error details; no assessment is started and no Vett request is made |
-| T12 | Unexpected KynSight failure | `500 Internal Server Error`; `Content-Type: application/json` | Safe structured error details; no credentials, raw provider payloads, or internal stack traces are exposed |
+| ID  | Scenario                                                                             | Required HTTP assertions                                                                                                                  | Required JSON assertions                                                                                                                                                                         |
+|-----|--------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| T01 | Assessment has queued or in-progress subjects                                        | `202 Accepted`; `Content-Type: application/json`                                                                                          | `status: PENDING`; progress counts; selected subjects retain `QUEUED` or `IN_PROGRESS` state; completed subjects remain present                                                                  |
+| T02 | All selected subjects complete successfully                                          | `200 OK`; `Content-Type: application/json`                                                                                                | `status: COMPLETE`; `partial: false`; every selected subject has a terminal successful result                                                                                                    |
+| T03 | All selected subjects reach terminal state with one or more permanent subject errors | `200 OK`; `Content-Type: application/json`                                                                                                | `status: COMPLETE`; `partial: true`; errors remain attached to affected subjects; no assessment-level error is created                                                                           |
+| T04 | Assessment-level Companies House or provider configuration failure                   | `502 Bad Gateway`; `Content-Type: application/json`                                                                                       | `status: ERROR`; assessment-level error code and details; any completed subject results are preserved                                                                                            |
+| T05 | Assessment cannot be recovered after process-local restart                           | `404 Not Found`; `Content-Type: application/json`                                                                                         | `status: ERROR`; `ASSESSMENT_NOT_FOUND`; no fabricated screening results                                                                                                                         |
+| T06 | Active and queued assessment/subject capacity is full                                | `503 Service Unavailable`; `Content-Type: application/json`; include `Retry-After` only when KynSight knows a reliable retry interval     | `status: ERROR`; `QUEUE_CAPACITY_EXCEEDED`; `retryable: true`; error details explain that capacity is full                                                                                       |
+| T07 | Short-term Vett rate limit                                                           | Initial snapshot uses `202 Accepted` and `Content-Type: application/json`; no extra rate-limit header is assumed unless KynSight owns one | Subject remains `QUEUED`; `status: PENDING`; `retryable: true`; `nextAttemptAt` is present when known; no `NO_MATCH` result; fake-clock advancement causes the retry and eventual completion     |
+| T08 | Vett `5xx` with retry then success or exhausted retry budget                         | Assert the appropriate `202`/`200` snapshot status and `Content-Type: application/json` at each request                                   | `Retry-After` is respected when supplied; after exhausted retries, the subject has a terminal error while other subjects continue; a fully terminal assessment is `COMPLETE` and `partial: true` |
+| T09 | Vett returns a malformed successful response                                         | `200 OK`; `Content-Type: application/json` when the assessment otherwise reaches terminal state                                           | Affected subject has `VETT_MALFORMED_RESPONSE`; no retry; no `NO_MATCH` outcome is produced                                                                                                      |
+| T10 | Longer queue across multiple rate-limit windows                                      | Use a test-only queue-cap override to simulate 50 and 100 subjects, mocked Vett responses, and a fake clock; make no real Vett requests   | Assert at most 10 request starts per rolling 60-second window, correct queue progression, preserved results, and final `COMPLETE`/`partial` body semantics; the live cap remains 20              |
+| T11 | Invalid client input                                                                 | `400 Bad Request`; `Content-Type: application/json`                                                                                       | Structured validation error details; no assessment is started and no Vett request is made                                                                                                        |
+| T12 | Unexpected KynSight failure                                                          | `500 Internal Server Error`; `Content-Type: application/json`                                                                             | Safe structured error details; no credentials, raw provider payloads, or internal stack traces are exposed                                                                                       |
 
 The live queue configuration remains `MAX_ACTIVE_ASSESSMENTS = 1`, `MAX_QUEUED_ASSESSMENTS = 2`, and `MAX_QUEUED_VETT_SUBJECTS = 20`. Test-only overrides must be explicit and isolated from production configuration.
