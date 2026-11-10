@@ -1,6 +1,8 @@
 export const VETT_BASE_URL = "https://global-sanctions-export-control-screener.p.rapidapi.com";
 export const VETT_RAPIDAPI_HOST = "global-sanctions-export-control-screener.p.rapidapi.com";
 export const DEFAULT_VETT_THRESHOLD = 85;
+export const MIN_VETT_THRESHOLD = 50;
+export const MAX_VETT_THRESHOLD = 100;
 export const DEFAULT_VETT_REQUEST_TIMEOUT_MS = 10_000;
 
 export type VettErrorCode =

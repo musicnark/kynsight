@@ -6,8 +6,7 @@ export type ScreeningStatus = "QUEUED" | "IN_PROGRESS" | "COMPLETE" | "ERROR";
 
 export interface AssessmentRequest {
   companyNumber: unknown;
-  assessmentId?: unknown;
-  idempotencyKey?: unknown;
+  threshold?: unknown;
   refresh?: unknown;
 }
 
@@ -44,8 +43,8 @@ export interface AssessmentError {
 }
 
 export interface AssessmentSnapshot {
-  assessmentId: string;
   companyNumber: string;
+  threshold: number;
   status: AssessmentStatus;
   partial: boolean;
   progress: AssessmentProgress;
@@ -60,8 +59,8 @@ export interface AssessmentSnapshot {
 export interface AssessmentRecord {
   assessmentId: string;
   companyNumber: string;
+  threshold: number;
   fingerprint: string;
-  idempotencyKey: string | null;
   selection: SubjectSelection;
   subjects: AssessmentSubject[];
   status: AssessmentStatus;

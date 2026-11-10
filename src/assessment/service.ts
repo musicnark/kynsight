@@ -10,8 +10,13 @@ import type {
 } from "./types.js";
 import { AssessmentStore } from "./store.js";
 import { VettQueue } from "./queue.js";
+import {
+  DEFAULT_VETT_THRESHOLD,
+  MAX_VETT_THRESHOLD,
+  MIN_VETT_THRESHOLD,
+} from "../vett/types.js";
 
-const SCREENING_POLICY_VERSION = "vett-fixture-v0-threshold-85";
+const SCREENING_POLICY_VERSION = "vett-fixture-v0";
 
 export interface AssessmentServiceOptions {
   companiesHouseClient: CompaniesHouseClient;
@@ -55,31 +60,15 @@ export class AssessmentService {
       return badRequest(validated.error);
     }
 
-    const existingByKey = validated.idempotencyKey === null
-      ? undefined
-      : this.store.byIdempotencyKey(validated.idempotencyKey);
-    if (existingByKey !== undefined) {
-      if (existingByKey.fingerprint !== validated.fingerprint) {
-        return badRequest({
-          code: "IDEMPOTENCY_KEY_REUSED",
-          message: "The idempotency key was already used with different assessment input.",
-          retryable: false,
-        });
-      }
-      return this.snapshotResult(existingByKey);
-    }
-
-    if (!validated.refresh && validated.assessmentId !== null) {
-      const existing = this.store.get(validated.assessmentId);
-      if (existing === undefined) {
-        return notFound(validated.assessmentId);
-      }
-      return this.snapshotResult(existing);
-    }
-
-    if (!validated.refresh && validated.assessmentId === null && validated.idempotencyKey === null) {
+    if (!validated.refresh) {
       const latest = this.store.latestForCompany(validated.companyNumber);
-      if (latest !== undefined && !isReadyForBudgetRetry(latest, this.now())) {
+      if (
+        latest !== undefined
+        && !isReadyForBudgetRetry(latest, this.now())
+      ) {
+        if (latest.status === "PENDING") {
+          this.queue.enqueue(latest);
+        }
         return this.snapshotResult(latest);
       }
     }
@@ -91,8 +80,8 @@ export class AssessmentService {
     if (!extraction.ok) {
       const record = this.errorRecord(
         validated.companyNumber,
+        validated.threshold,
         validated.fingerprint,
-        validated.idempotencyKey,
         extraction.failure,
       );
       this.store.add(record);
@@ -125,8 +114,8 @@ export class AssessmentService {
     const record: AssessmentRecord = {
       assessmentId: this.assessmentIdGenerator(),
       companyNumber: validated.companyNumber,
+      threshold: validated.threshold,
       fingerprint: validated.fingerprint,
-      idempotencyKey: validated.idempotencyKey,
       selection: extraction.selection,
       subjects: extraction.selection.subjects.map((subject) => ({
         ...subject,
@@ -154,8 +143,8 @@ export class AssessmentService {
 
   private errorRecord(
     companyNumber: string,
+    threshold: number,
     fingerprint: string,
-    idempotencyKey: string | null,
     failure: {
       code: string;
       message: string;
@@ -173,8 +162,8 @@ export class AssessmentService {
     return {
       assessmentId: this.assessmentIdGenerator(),
       companyNumber,
+      threshold,
       fingerprint,
-      idempotencyKey,
       selection: emptySelection(),
       subjects: [],
       status: "ERROR",
@@ -197,8 +186,7 @@ function validateRequest(input: unknown):
   | {
       ok: true;
       companyNumber: string;
-      assessmentId: string | null;
-      idempotencyKey: string | null;
+      threshold: number;
       refresh: boolean;
       fingerprint: string;
     }
@@ -214,14 +202,17 @@ function validateRequest(input: unknown):
     return { ok: false, error: invalidRequest("companyNumber must be a one-to-eight character alphanumeric string.") };
   }
 
-  const assessmentId = optionalString(input.assessmentId);
-  if (input.assessmentId !== undefined && assessmentId === null) {
-    return { ok: false, error: invalidRequest("assessmentId must be a non-empty string when supplied.") };
-  }
-
-  const idempotencyKey = optionalString(input.idempotencyKey);
-  if (input.idempotencyKey !== undefined && idempotencyKey === null) {
-    return { ok: false, error: invalidRequest("idempotencyKey must be a non-empty string when supplied.") };
+  const threshold = input.threshold === undefined ? DEFAULT_VETT_THRESHOLD : input.threshold;
+  if (
+    typeof threshold !== "number"
+    || !Number.isInteger(threshold)
+    || threshold < MIN_VETT_THRESHOLD
+    || threshold > MAX_VETT_THRESHOLD
+  ) {
+    return {
+      ok: false,
+      error: invalidRequest(`threshold must be an integer between ${MIN_VETT_THRESHOLD} and ${MAX_VETT_THRESHOLD}.`),
+    };
   }
 
   const refresh = input.refresh === undefined ? false : input.refresh;
@@ -232,14 +223,11 @@ function validateRequest(input: unknown):
   return {
     ok: true,
     companyNumber,
-    assessmentId,
-    idempotencyKey,
+    threshold,
     refresh,
     fingerprint: JSON.stringify({
       companyNumber,
-      assessmentId,
-      idempotencyKey,
-      refresh,
+      threshold,
       policy: SCREENING_POLICY_VERSION,
     }),
   };
@@ -252,22 +240,6 @@ function badRequest(error: AssessmentValidationError): AssessmentHttpResult {
       status: "ERROR",
       partial: false,
       assessmentError: error,
-    },
-  };
-}
-
-function notFound(assessmentId: string): AssessmentHttpResult {
-  return {
-    statusCode: 404,
-    body: {
-      assessmentId,
-      status: "ERROR",
-      partial: false,
-      assessmentError: {
-        code: "ASSESSMENT_NOT_FOUND",
-        message: "The assessment could not be recovered from process-local state.",
-        retryable: true,
-      },
     },
   };
 }

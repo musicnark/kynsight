@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { VettClient } from "../src/vett/client.js";
+import { normalizeVettInputName, VettClient } from "../src/vett/client.js";
 
 function client(fetchImplementation: typeof fetch): VettClient {
   return new VettClient({
@@ -25,6 +25,43 @@ describe("VettClient", () => {
       "x-rapidapi-key": "secret-key",
     });
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ name: "Example", threshold: 85 });
+  });
+
+  it("uses a supplied threshold and removes supported title tokens from the Vett input", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ input: "BLOCH, Nathan", is_match: false, matches: [] }), { status: 200 }),
+    );
+
+    await client(fetchImplementation).screen("BLOCH, Nathan, Mr.", 90);
+
+    expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))).toEqual({
+      name: "BLOCH, Nathan",
+      threshold: 90,
+    });
+  });
+
+  it.each([
+    ["  dr.   Jane   Doe,  MR. ", "Jane Doe"],
+    ["MS Jane Doe", "Jane Doe"],
+    ["Jane Doe, PhD", "Jane Doe, PhD"],
+    ["BLOCH, Nathan, Mr.", "BLOCH, Nathan"],
+  ])("normalizes %s to %s without changing unsupported name parts", (input, expected) => {
+    expect(normalizeVettInputName(input)).toBe(expected);
+  });
+
+  it("returns a safe configuration error when the API key is missing", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>();
+    const result = await new VettClient({ apiKey: "", fetchImplementation }).screen("Example");
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        code: "VETT_CONFIGURATION",
+        scope: "ASSESSMENT",
+      }),
+    });
+    expect(JSON.stringify(result)).not.toContain("x-rapidapi-key");
+    expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
   it("normalizes authentication and rate-limit failures without provider bodies", async () => {

@@ -29,16 +29,6 @@ export class AssessmentStore {
     return undefined;
   }
 
-  public byIdempotencyKey(key: string): AssessmentRecord | undefined {
-    for (const assessmentId of this.order) {
-      const record = this.records.get(assessmentId);
-      if (record?.idempotencyKey === key) {
-        return record;
-      }
-    }
-    return undefined;
-  }
-
   public activeAssessmentCount(): number {
     return [...this.records.values()].filter((record) => record.status === "PENDING").length;
   }
@@ -63,8 +53,8 @@ export class AssessmentStore {
       || record.assessmentError !== undefined;
 
     return {
-      assessmentId: record.assessmentId,
       companyNumber: record.companyNumber,
+      threshold: record.threshold,
       status: record.status,
       partial,
       progress,

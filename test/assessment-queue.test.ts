@@ -76,8 +76,8 @@ function record(subjects: SelectedSubject[], assessmentId = "asmt_test"): Assess
   return {
     assessmentId,
     companyNumber: "12345678",
+    threshold: 85,
     fingerprint: "fingerprint",
-    idempotencyKey: null,
     selection: selection(subjects),
     subjects: subjects.map((value) => ({ ...value, screening: { status: "QUEUED" as const } })),
     status: "PENDING",
@@ -226,6 +226,244 @@ describe("VettQueue", () => {
     expect(assessment.subjects[0]?.screening).toEqual(expect.objectContaining({
       status: "COMPLETE",
       attempts: 2,
+    }));
+  });
+
+  it("skips a delayed retry in favour of a later eligible subject in the same assessment", async () => {
+    const store = new AssessmentStore();
+    const clock = new FakeClock();
+    const names: string[] = [];
+    const client = {
+      screen: async (name: string): Promise<VettAttemptResult> => {
+        names.push(name);
+        if (name === "PERSON 1" && names.filter((value) => value === name).length === 1) {
+          return {
+            ok: false,
+            error: {
+              kind: "UPSTREAM_ERROR",
+              source: "VETT",
+              code: "VETT_RATE_LIMITED",
+              message: "Rate limited.",
+              retryable: true,
+              scope: "SUBJECT",
+              retryAfterSeconds: 10,
+            },
+          };
+        }
+        return successfulResult(name);
+      },
+    } as unknown as VettClient;
+    const queue = new VettQueue(store, client, { clock });
+    const assessment = record([subject(1), subject(2)]);
+    store.add(assessment);
+    queue.enqueue(assessment);
+    await flush();
+
+    expect(names).toEqual(["PERSON 1", "PERSON 2"]);
+    expect(assessment.subjects[0]?.screening).toEqual(expect.objectContaining({
+      status: "QUEUED",
+      nextAttemptAt: new Date(10_000).toISOString(),
+    }));
+    expect(assessment.subjects[1]?.screening.status).toBe("COMPLETE");
+    expect(assessment.status).toBe("PENDING");
+
+    clock.advance(9_999);
+    await flush();
+    expect(names).toHaveLength(2);
+    clock.advance(1);
+    await queue.waitForIdle();
+
+    expect(names).toEqual(["PERSON 1", "PERSON 2", "PERSON 1"]);
+    expect(assessment.status).toBe("COMPLETE");
+    expect(assessment.subjects[0]?.screening).toEqual(expect.objectContaining({
+      status: "COMPLETE",
+      attempts: 2,
+    }));
+  });
+
+  it("skips a delayed retry in favour of an eligible subject in another assessment", async () => {
+    const store = new AssessmentStore();
+    const clock = new FakeClock();
+    const names: string[] = [];
+    const client = {
+      screen: async (name: string): Promise<VettAttemptResult> => {
+        names.push(name);
+        if (name === "PERSON 1" && names.filter((value) => value === name).length === 1) {
+          return {
+            ok: false,
+            error: {
+              kind: "UPSTREAM_ERROR",
+              source: "VETT",
+              code: "VETT_RATE_LIMITED",
+              message: "Rate limited.",
+              retryable: true,
+              scope: "SUBJECT",
+              retryAfterSeconds: 10,
+            },
+          };
+        }
+        return successfulResult(name);
+      },
+    } as unknown as VettClient;
+    const queue = new VettQueue(store, client, { clock });
+    const first = record([subject(1)], "asmt_first");
+    const second = record([subject(2)], "asmt_second");
+    store.add(first);
+    queue.enqueue(first);
+    await flush();
+    store.add(second);
+    queue.enqueue(second);
+    await flush();
+    await flush();
+
+    expect(names).toEqual(["PERSON 1", "PERSON 2"]);
+    expect(first.status).toBe("PENDING");
+    expect(second.status).toBe("COMPLETE");
+
+    clock.advance(10_000);
+    await queue.waitForIdle();
+    expect(names).toEqual(["PERSON 1", "PERSON 2", "PERSON 1"]);
+    expect(first.status).toBe("COMPLETE");
+  });
+
+  it("keeps Vett requests non-concurrent while processing eligible work", async () => {
+    const store = new AssessmentStore();
+    let active = 0;
+    let maximumActive = 0;
+    const client = {
+      screen: async (name: string): Promise<VettAttemptResult> => {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        await Promise.resolve();
+        active -= 1;
+        return successfulResult(name);
+      },
+    } as unknown as VettClient;
+    const queue = new VettQueue(store, client);
+    const assessment = record([subject(1), subject(2), subject(3)]);
+    store.add(assessment);
+    queue.enqueue(assessment);
+    await queue.waitForIdle();
+
+    expect(maximumActive).toBe(1);
+    expect(assessment.status).toBe("COMPLETE");
+  });
+
+  it("preserves queue ordering when every subject is eligible", async () => {
+    const store = new AssessmentStore();
+    const names: string[] = [];
+    const client = {
+      screen: async (name: string): Promise<VettAttemptResult> => {
+        names.push(name);
+        return successfulResult(name);
+      },
+    } as unknown as VettClient;
+    const queue = new VettQueue(store, client);
+    const first = record([subject(1), subject(2)], "asmt_first");
+    const second = record([subject(3)], "asmt_second");
+    store.add(first);
+    store.add(second);
+    queue.enqueue(first);
+    queue.enqueue(second);
+    await queue.waitForIdle();
+
+    expect(names).toEqual(["PERSON 1", "PERSON 2", "PERSON 3"]);
+  });
+
+  it("counts a retry against the monthly request budget", async () => {
+    const store = new AssessmentStore();
+    const clock = new FakeClock();
+    let calls = 0;
+    const client = {
+      screen: async (name: string): Promise<VettAttemptResult> => {
+        calls += 1;
+        return calls === 1
+          ? {
+              ok: false,
+              error: {
+                kind: "UPSTREAM_ERROR",
+                source: "VETT",
+                code: "VETT_UPSTREAM",
+                message: "Server failure.",
+                retryable: true,
+                scope: "SUBJECT",
+              },
+            }
+          : successfulResult(name);
+      },
+    } as unknown as VettClient;
+    const queue = new VettQueue(store, client, {
+      clock,
+      requestsPerMonth: 2,
+      retryBaseDelayMs: 10,
+    });
+    const assessment = record([subject(1)]);
+    store.add(assessment);
+    queue.enqueue(assessment);
+    await flush();
+    clock.advance(10);
+    await queue.waitForIdle();
+
+    expect(calls).toBe(2);
+    expect(assessment.subjects[0]?.screening.status).toBe("COMPLETE");
+  });
+
+  it("preserves completed results when a later provider-wide failure stops the assessment", async () => {
+    const store = new AssessmentStore();
+    const client = {
+      screen: async (name: string): Promise<VettAttemptResult> => name === "PERSON 1"
+        ? successfulResult(name)
+        : {
+            ok: false,
+            error: {
+              kind: "UPSTREAM_ERROR",
+              source: "VETT",
+              code: "VETT_AUTHENTICATION",
+              message: "The Vett integration could not authenticate.",
+              retryable: false,
+              scope: "ASSESSMENT",
+            },
+          },
+    } as unknown as VettClient;
+    const queue = new VettQueue(store, client);
+    const assessment = record([subject(1), subject(2), subject(3)]);
+    store.add(assessment);
+    queue.enqueue(assessment);
+    await queue.waitForIdle();
+
+    expect(assessment.status).toBe("ERROR");
+    expect(assessment.subjects[0]?.screening).toEqual(expect.objectContaining({
+      status: "COMPLETE",
+      result: expect.objectContaining({ input: "PERSON 1" }),
+    }));
+    expect(assessment.subjects[1]?.screening).toEqual(expect.objectContaining({
+      status: "ERROR",
+      error: expect.objectContaining({ code: "VETT_AUTHENTICATION" }),
+    }));
+    expect(assessment.subjects[2]?.screening.status).toBe("QUEUED");
+  });
+
+  it("normalizes only the Vett input while preserving the source subject name", async () => {
+    const store = new AssessmentStore();
+    const vettInputs: string[] = [];
+    const client = {
+      screen: async (name: string): Promise<VettAttemptResult> => {
+        vettInputs.push(name);
+        return successfulResult("BLOCH, Nathan");
+      },
+    } as unknown as VettClient;
+    const queue = new VettQueue(store, client);
+    const selected = { ...subject(1), name: "BLOCH, Nathan, Mr." };
+    const assessment = record([selected]);
+    store.add(assessment);
+    queue.enqueue(assessment);
+    await queue.waitForIdle();
+
+    expect(vettInputs).toEqual(["BLOCH, Nathan"]);
+    expect(assessment.subjects[0]?.name).toBe("BLOCH, Nathan, Mr.");
+    expect(assessment.subjects[0]?.screening).toEqual(expect.objectContaining({
+      status: "COMPLETE",
+      result: expect.objectContaining({ input: "BLOCH, Nathan" }),
     }));
   });
 

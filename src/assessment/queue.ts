@@ -1,5 +1,5 @@
 import { normalizeVettResponse } from "../vett/adapter.js";
-import type { VettClient } from "../vett/client.js";
+import { normalizeVettInputName, type VettClient } from "../vett/client.js";
 import type { VettError } from "../vett/types.js";
 import type { AssessmentRecord, AssessmentSubject } from "./types.js";
 import { AssessmentStore, isTerminal } from "./store.js";
@@ -54,6 +54,7 @@ export class VettQueue {
   private monthlyRequests = 0;
   private running = false;
   private idleWaiters: Array<() => void> = [];
+  private wakeWaiters: Array<() => void> = [];
 
   public constructor(store: AssessmentStore, client: VettClient, config: QueueConfig = {}) {
     this.store = store;
@@ -87,7 +88,10 @@ export class VettQueue {
   }
 
   public enqueue(record: AssessmentRecord): void {
-    this.assessmentIds.push(record.assessmentId);
+    if (!this.assessmentIds.includes(record.assessmentId)) {
+      this.assessmentIds.push(record.assessmentId);
+    }
+    this.wake();
     void this.pump();
   }
 
@@ -109,13 +113,47 @@ export class VettQueue {
     this.running = true;
     try {
       while (this.assessmentIds.length > 0) {
-        const assessmentId = this.assessmentIds.shift();
-        const record = assessmentId === undefined ? undefined : this.store.get(assessmentId);
-        if (record === undefined || record.status !== "PENDING") {
+        this.removeTerminalAssessments();
+        if (this.assessmentIds.length === 0) {
+          break;
+        }
+
+        this.resetMonthlyBudgetIfNeeded();
+        if (this.monthlyRequests >= this.requestsPerMonth) {
+          for (const assessmentId of this.assessmentIds) {
+            const record = this.store.get(assessmentId);
+            if (record?.status === "PENDING") {
+              this.markBudgetExhausted(record);
+            }
+          }
           continue;
         }
 
-        await this.processAssessment(record);
+        const eligible = this.nextEligibleSubject();
+        if (eligible !== undefined) {
+          this.pruneRequestStarts();
+          const rateWaitMs = this.rateLimitWaitMs();
+          if (rateWaitMs > 0) {
+            await this.waitForWake(rateWaitMs);
+            continue;
+          }
+
+          await this.screenSubject(eligible.record, eligible.subject);
+          if (
+            eligible.record.status === "PENDING"
+            && !eligible.record.subjects.some((subject) => subject.screening.status === "QUEUED")
+          ) {
+            eligible.record.status = "COMPLETE";
+          }
+          continue;
+        }
+
+        const nextAttemptAt = this.nextAttemptAt();
+        if (nextAttemptAt === undefined) {
+          break;
+        }
+        const waitMs = Math.max(1, nextAttemptAt - this.clock.now());
+        await this.waitForWake(waitMs);
       }
     } finally {
       this.running = false;
@@ -126,38 +164,71 @@ export class VettQueue {
     }
   }
 
-  private async processAssessment(record: AssessmentRecord): Promise<void> {
-    while (record.status === "PENDING") {
-      const subject = record.subjects.find((candidate) => candidate.screening.status === "QUEUED");
-      if (subject === undefined) {
-        record.status = "COMPLETE";
-        return;
+  private removeTerminalAssessments(): void {
+    for (let index = this.assessmentIds.length - 1; index >= 0; index -= 1) {
+      const record = this.store.get(this.assessmentIds[index]!);
+      if (record === undefined || record.status !== "PENDING") {
+        this.assessmentIds.splice(index, 1);
       }
+    }
+  }
 
-      const nextAttemptAt = subject.screening.status === "QUEUED"
-        ? subject.screening.nextAttemptAt
-        : undefined;
-      if (nextAttemptAt !== undefined) {
-        const waitMs = Date.parse(nextAttemptAt) - this.clock.now();
-        if (waitMs > 0) {
-          await this.clock.sleep(waitMs);
-        }
-      }
-
-      this.pruneRequestStarts();
-      const rateWaitMs = this.rateLimitWaitMs();
-      if (rateWaitMs > 0) {
-        await this.clock.sleep(rateWaitMs);
+  private nextEligibleSubject(): { record: AssessmentRecord; subject: AssessmentSubject } | undefined {
+    const now = this.clock.now();
+    for (const assessmentId of this.assessmentIds) {
+      const record = this.store.get(assessmentId);
+      if (record === undefined || record.status !== "PENDING") {
         continue;
       }
-
-      this.resetMonthlyBudgetIfNeeded();
-      if (this.monthlyRequests >= this.requestsPerMonth) {
-        this.markBudgetExhausted(record);
-        return;
+      const subject = record.subjects.find((candidate) => (
+        candidate.screening.status === "QUEUED"
+        && (
+          candidate.screening.nextAttemptAt === undefined
+          || Number.isNaN(Date.parse(candidate.screening.nextAttemptAt))
+          || Date.parse(candidate.screening.nextAttemptAt) <= now
+        )
+      ));
+      if (subject !== undefined) {
+        return { record, subject };
       }
+    }
+    return undefined;
+  }
 
-      await this.screenSubject(record, subject);
+  private nextAttemptAt(): number | undefined {
+    let earliest: number | undefined;
+    for (const assessmentId of this.assessmentIds) {
+      const record = this.store.get(assessmentId);
+      if (record === undefined || record.status !== "PENDING") {
+        continue;
+      }
+      for (const subject of record.subjects) {
+        if (subject.screening.status !== "QUEUED" || subject.screening.nextAttemptAt === undefined) {
+          continue;
+        }
+        const nextAttemptAt = Date.parse(subject.screening.nextAttemptAt);
+        if (!Number.isNaN(nextAttemptAt) && (earliest === undefined || nextAttemptAt < earliest)) {
+          earliest = nextAttemptAt;
+        }
+      }
+    }
+    return earliest;
+  }
+
+  private waitForWake(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => {
+      const timeout = this.clock.sleep(milliseconds);
+      const wake = new Promise<void>((wakeResolve) => {
+        this.wakeWaiters.push(wakeResolve);
+      });
+      void Promise.race([timeout, wake]).then(() => resolve());
+    });
+  }
+
+  private wake(): void {
+    const waiters = this.wakeWaiters.splice(0);
+    for (const resolve of waiters) {
+      resolve();
     }
   }
 
@@ -166,13 +237,14 @@ export class VettQueue {
       ? subject.screening.error?.attempts ?? 0
       : 0;
     const attempts = previousAttempts + 1;
+    const vettInput = normalizeVettInputName(subject.name);
     subject.screening = { status: "IN_PROGRESS", attempts };
     this.requestStarts.push(this.clock.now());
     this.monthlyRequests += 1;
 
     let response;
     try {
-      response = await this.client.screen(subject.name);
+      response = await this.client.screen(vettInput, record.threshold);
     } catch {
       response = {
         ok: false as const,
@@ -187,7 +259,9 @@ export class VettQueue {
       };
     }
 
-    const result = response.ok ? normalizeVettResponse(response.body, subject.name) : response;
+    const result = response.ok
+      ? normalizeVettResponse(response.body, vettInput)
+      : response;
     if (result.ok) {
       subject.screening = {
         status: "COMPLETE",

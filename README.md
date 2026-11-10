@@ -658,27 +658,27 @@ The corporate PSC remains a separate source record and is not a screened individ
 }
 ```
 
-### Assessment Identity And Requests
+### Assessment Requests
 
 The system should expose one assessment request operation; a separate status or polling endpoint is not required for demo scope.
 
 ```json
 {
   "companyNumber": "04092583",
-  "assessmentId": "optional-existing-assessment-id",
-  "idempotencyKey": "client-generated-key-for-this-user-action",
+  "threshold": 85,
   "refresh": false
 }
 ```
 
 Draft behaviour:
 
-- The first request creates a server-generated `assessmentId`.
-- `refresh` defaults to `false`. Without refresh, the operation retrieves the current/latest assessment for the company and advances queued work where possible.
-- `refresh: true` starts a new assessment run and returns a new `assessmentId`.
-- Repeating the same `idempotencyKey` with the same request, including a refresh request, returns the same assessment and must not create duplicate Vett requests.
-- Supplying an existing `assessmentId` returns its current snapshot and advances queued work where possible, unless `refresh: true` explicitly requests a new run.
-- If no key is supplied, an active assessment for the same company and screening policy should be reused as a defensive fallback.
+- The first request creates an internal assessment record. The public response does not expose its process-local identifier.
+- `threshold` is optional and defaults to `85`. It must be an integer from `50` through `100`.
+- `refresh` defaults to `false`. Without refresh, the operation retrieves the latest assessment for the company, preserves its stored threshold, and advances queued work where possible.
+- `refresh: true` starts a new assessment run. Repeating a `refresh: true` request intentionally creates another assessment.
+- A supplied threshold is used when creating a new assessment. It does not change the threshold of a reused assessment.
+
+Before a name is sent to Vett, KynSight removes supported leading and trailing titles (`Mr`, `Mrs`, `Ms`, `Miss`, `Mx`, `Dr`, `Prof`, `Professor`, `Rev`, `Reverend`, `Sir`, `Dame`, `Lord`, `Lady`, `Hon`, `Judge`, `Capt`, `Captain`, `Col`, `Colonel`, `Maj`, `Major`, `Gen`, `General`, and `Lt`/`Lieutenant`), ignoring case and surrounding punctuation, and collapses repeated whitespace. The original Companies House name remains in the assessment subject.
 
 ### Lifecycle States
 
@@ -807,7 +807,6 @@ The prototype's initial application policy is:
 Because assessment state is process-local:
 
 - a process restart may lose queued work and completed assessment state;
-- an assessment that cannot be recovered after restart returns `ERROR` with `ASSESSMENT_NOT_FOUND`; and
 - the contract must not claim durable recovery or background processing after restart.
 
 The JSON assessment `status` is the domain contract and must be present in every assessment response. HTTP status codes are transport-level signals only; clients must not infer detailed assessment state from HTTP codes alone. The exact mappings are defined below.
@@ -822,13 +821,14 @@ The transport-level HTTP status should accompany the JSON assessment status and 
 | Assessment reached terminal subject outcomes (`status: COMPLETE`) | `200 OK` |
 | Assessment-level upstream failure (`status: ERROR`) | `502 Bad Gateway` |
 | Invalid client input | `400 Bad Request` |
-| Assessment cannot be recovered (`ASSESSMENT_NOT_FOUND`) | `404 Not Found` |
+| Unsupported route or method | `404 Not Found` |
 | Queue capacity exceeded | `503 Service Unavailable` |
 | Unexpected or other KynSight failure | `500 Internal Server Error` |
 
 Additional rules:
 
 - Every response includes the JSON assessment `status` where an assessment exists, plus structured error details where applicable.
+- Assessment request bodies larger than 1,000,000 bytes return `400 Bad Request` with `INVALID_REQUEST` and do not start an assessment.
 - A valid assessment with per-subject failures remains `status: COMPLETE`, `partial: true`, and `200 OK`.
 - Queue-capacity responses should include `Retry-After` when a meaningful retry interval is known.
 - HTTP status codes do not replace the JSON domain status or error code.
@@ -855,7 +855,6 @@ HTTP/1.1 202 Accepted
 Content-Type: application/json
 
 {
-  "assessmentId": "asmt_123",
   "companyNumber": "04092583",
   "status": "PENDING",
   "partial": true,
@@ -894,7 +893,6 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "assessmentId": "asmt_456",
   "companyNumber": "04092583",
   "status": "COMPLETE",
   "partial": true,
@@ -938,7 +936,6 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "assessmentId": "asmt_789",
   "companyNumber": "04092583",
   "status": "COMPLETE",
   "partial": true,
@@ -980,7 +977,6 @@ HTTP/1.1 502 Bad Gateway
 Content-Type: application/json
 
 {
-  "assessmentId": "asmt_999",
   "companyNumber": "04092583",
   "status": "ERROR",
   "partial": true,
@@ -1019,24 +1015,6 @@ Content-Type: application/json
 }
 ```
 
-#### Assessment Not Found
-
-```http
-HTTP/1.1 404 Not Found
-Content-Type: application/json
-
-{
-  "assessmentId": "asmt_missing",
-  "status": "ERROR",
-  "partial": false,
-  "assessmentError": {
-    "code": "ASSESSMENT_NOT_FOUND",
-    "message": "The assessment could not be recovered from process-local state.",
-    "retryable": true
-  }
-}
-```
-
 #### Queue Capacity Exceeded
 
 When KynSight knows a reliable retry interval, it includes `Retry-After`. The value below is illustrative; the header is omitted when no reliable interval is available.
@@ -1067,7 +1045,7 @@ Every scenario must assert the HTTP status, the response headers that KynSight o
 | T02 | All selected subjects complete successfully                                          | `200 OK`; `Content-Type: application/json`                                                                                                | `status: COMPLETE`; `partial: false`; every selected subject has a terminal successful result                                                                                                    |
 | T03 | All selected subjects reach terminal state with one or more permanent subject errors | `200 OK`; `Content-Type: application/json`                                                                                                | `status: COMPLETE`; `partial: true`; errors remain attached to affected subjects; no assessment-level error is created                                                                           |
 | T04 | Assessment-level Companies House or provider configuration failure                   | `502 Bad Gateway`; `Content-Type: application/json`                                                                                       | `status: ERROR`; assessment-level error code and details; any completed subject results are preserved                                                                                            |
-| T05 | Assessment cannot be recovered after process-local restart                           | `404 Not Found`; `Content-Type: application/json`                                                                                         | `status: ERROR`; `ASSESSMENT_NOT_FOUND`; no fabricated screening results                                                                                                                         |
+| T05 | Unsupported route or method                                                        | `404 Not Found`; `Content-Type: application/json`                                                                                         | `status: ERROR`; `NOT_FOUND`; safe structured error details                                                                                                                                    |
 | T06 | Active and queued assessment/subject capacity is full                                | `503 Service Unavailable`; `Content-Type: application/json`; include `Retry-After` only when KynSight knows a reliable retry interval     | `status: ERROR`; `QUEUE_CAPACITY_EXCEEDED`; `retryable: true`; error details explain that capacity is full                                                                                       |
 | T07 | Short-term Vett rate limit                                                           | Initial snapshot uses `202 Accepted` and `Content-Type: application/json`; no extra rate-limit header is assumed unless KynSight owns one | Subject remains `QUEUED`; `status: PENDING`; `retryable: true`; `nextAttemptAt` is present when known; no `NO_MATCH` result; fake-clock advancement causes the retry and eventual completion     |
 | T08 | Vett `5xx` with retry then success or exhausted retry budget                         | Assert the appropriate `202`/`200` snapshot status and `Content-Type: application/json` at each request                                   | `Retry-After` is respected when supplied; after exhausted retries, the subject has a terminal error while other subjects continue; a fully terminal assessment is `COMPLETE` and `partial: true` |

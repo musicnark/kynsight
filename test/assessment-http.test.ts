@@ -134,8 +134,8 @@ function assessmentRecord(assessmentId: string, subjectCount = 0): AssessmentRec
   return {
     assessmentId,
     companyNumber: "99999999",
+    threshold: 85,
     fingerprint: assessmentId,
-    idempotencyKey: null,
     selection: {
       subjectSelection: {
         individualPscCount: subjectCount,
@@ -254,6 +254,48 @@ describe("assessment HTTP seam", () => {
     }));
   });
 
+  it("rejects request bodies over the HTTP limit without starting an assessment", async () => {
+    let extractionCalls = 0;
+    const baseUrl = await listen(makeServer({
+      subjectExtraction: async () => {
+        extractionCalls += 1;
+        return emptyExtraction();
+      },
+    }));
+    const response = await fetch(`${baseUrl}/assessments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ companyNumber: "12345678", padding: "x".repeat(1_000_100) }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toEqual(expect.objectContaining({
+      status: "ERROR",
+      assessmentError: expect.objectContaining({ code: "INVALID_REQUEST" }),
+    }));
+    expect(extractionCalls).toBe(0);
+  });
+
+  it("returns the documented JSON error for unsupported routes and methods", async () => {
+    const baseUrl = await listen(makeServer());
+    const unsupportedRoute = await fetch(`${baseUrl}/unsupported`);
+    const unsupportedMethod = await fetch(`${baseUrl}/assessments`, { method: "GET" });
+
+    expect(unsupportedRoute.status).toBe(404);
+    expect(unsupportedRoute.headers.get("content-type")).toContain("application/json");
+    expect(await unsupportedRoute.json()).toEqual(expect.objectContaining({
+      status: "ERROR",
+      assessmentError: expect.objectContaining({ code: "NOT_FOUND" }),
+    }));
+    expect(unsupportedMethod.status).toBe(404);
+    expect(unsupportedMethod.headers.get("content-type")).toContain("application/json");
+    expect(await unsupportedMethod.json()).toEqual(expect.objectContaining({
+      status: "ERROR",
+      assessmentError: expect.objectContaining({ code: "NOT_FOUND" }),
+    }));
+  });
+
   it("returns 202 with selected subjects that are still queued", async () => {
     const clock = new FakeClock();
     const vettClient = {
@@ -287,12 +329,12 @@ describe("assessment HTTP seam", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyNumber: "12345678" }),
     });
-    const firstBody = await first.json() as { assessmentId: string };
+    await first.json();
     await harness.queue.waitForIdle();
     const response = await fetch(`${baseUrl}/assessments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyNumber: "12345678", assessmentId: firstBody.assessmentId }),
+      body: JSON.stringify({ companyNumber: "12345678" }),
     });
     const body = await response.json() as {
       status: string;
@@ -302,6 +344,7 @@ describe("assessment HTTP seam", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/json");
+    expect(body).not.toHaveProperty("assessmentId");
     expect(body.status).toBe("COMPLETE");
     expect(body.partial).toBe(false);
     expect(body.subjects.every((subject) => subject.screening.status === "COMPLETE")).toBe(true);
@@ -332,12 +375,12 @@ describe("assessment HTTP seam", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyNumber: "12345678" }),
     });
-    const firstBody = await first.json() as { assessmentId: string };
+    await first.json();
     await harness.queue.waitForIdle();
     const response = await fetch(`${baseUrl}/assessments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyNumber: "12345678", assessmentId: firstBody.assessmentId }),
+      body: JSON.stringify({ companyNumber: "12345678" }),
     });
     const body = await response.json() as { status: string; partial: boolean; assessmentError?: unknown };
 
@@ -371,12 +414,12 @@ describe("assessment HTTP seam", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyNumber: "12345678" }),
     });
-    const firstBody = await first.json() as { assessmentId: string };
+    await first.json();
     await harness.queue.waitForIdle();
     const response = await fetch(`${baseUrl}/assessments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyNumber: "12345678", assessmentId: firstBody.assessmentId }),
+      body: JSON.stringify({ companyNumber: "12345678" }),
     });
     const body = await response.json() as { status: string; assessmentError: { code: string } };
 
@@ -385,23 +428,6 @@ describe("assessment HTTP seam", () => {
     expect(body).toEqual(expect.objectContaining({
       status: "ERROR",
       assessmentError: expect.objectContaining({ code: "VETT_AUTHENTICATION" }),
-    }));
-  });
-
-  it("returns 404 for an assessment lost from process-local state", async () => {
-    const baseUrl = await listen(makeServer());
-    const response = await fetch(`${baseUrl}/assessments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyNumber: "12345678", assessmentId: "asmt_missing" }),
-    });
-    const body = await response.json() as { status: string; assessmentError: { code: string } };
-
-    expect(response.status).toBe(404);
-    expect(response.headers.get("content-type")).toContain("application/json");
-    expect(body).toEqual(expect.objectContaining({
-      status: "ERROR",
-      assessmentError: expect.objectContaining({ code: "ASSESSMENT_NOT_FOUND" }),
     }));
   });
 
@@ -459,14 +485,14 @@ describe("assessment HTTP seam", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyNumber: "12345678" }),
     });
-    const firstBody = await first.json() as { assessmentId: string };
+    await first.json();
     expect(first.status).toBe(202);
     expect(first.headers.get("content-type")).toContain("application/json");
     await flush();
     const queued = await fetch(`${baseUrl}/assessments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyNumber: "12345678", assessmentId: firstBody.assessmentId }),
+      body: JSON.stringify({ companyNumber: "12345678" }),
     });
     const queuedBody = await queued.json() as { status: string; subjects: Array<{ screening: { status: string } }> };
 
@@ -512,14 +538,14 @@ describe("assessment HTTP seam", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyNumber: "12345678" }),
     });
-    const firstBody = await first.json() as { assessmentId: string };
+    await first.json();
     await flush();
     clock.advance(1_000);
     await harness.queue.waitForIdle();
     const response = await fetch(`${baseUrl}/assessments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyNumber: "12345678", assessmentId: firstBody.assessmentId }),
+      body: JSON.stringify({ companyNumber: "12345678" }),
     });
     const body = await response.json() as { status: string; partial: boolean };
 
@@ -546,13 +572,13 @@ describe("assessment HTTP seam", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyNumber: "12345678" }),
     });
-    const firstBody = await first.json() as { assessmentId: string };
+    await first.json();
     const harnessStore = harness.store;
     await harness.queue.waitForIdle();
     const response = await fetch(`${baseUrl}/assessments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyNumber: "12345678", assessmentId: firstBody.assessmentId }),
+      body: JSON.stringify({ companyNumber: "12345678" }),
     });
     const body = await response.json() as {
       status: string;
@@ -581,11 +607,11 @@ describe("assessment HTTP seam", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyNumber: "12345678" }),
     });
-    const firstBody = await first.json() as { assessmentId: string };
+    await first.json();
     expect(first.status).toBe(202);
     expect(first.headers.get("content-type")).toContain("application/json");
     await flush();
-    while (harness.store.get(firstBody.assessmentId)?.status === "PENDING") {
+    while (harness.store.latestForCompany("12345678")?.status === "PENDING") {
       clock.advance(60_000);
       await flush();
     }
@@ -593,7 +619,7 @@ describe("assessment HTTP seam", () => {
     const response = await fetch(`${baseUrl}/assessments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyNumber: "12345678", assessmentId: firstBody.assessmentId }),
+      body: JSON.stringify({ companyNumber: "12345678" }),
     });
     const body = await response.json() as { status: string; partial: boolean; progress: { total: number } };
 

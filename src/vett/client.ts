@@ -19,7 +19,7 @@ export class VettClient {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_VETT_REQUEST_TIMEOUT_MS;
   }
 
-  public async screen(name: string): Promise<VettAttemptResult> {
+  public async screen(name: string, threshold = DEFAULT_VETT_THRESHOLD): Promise<VettAttemptResult> {
     if (this.apiKey.trim() === "") {
       return {
         ok: false,
@@ -47,7 +47,7 @@ export class VettClient {
           "x-rapidapi-host": VETT_RAPIDAPI_HOST,
           "x-rapidapi-key": this.apiKey,
         },
-        body: JSON.stringify({ name, threshold: DEFAULT_VETT_THRESHOLD }),
+        body: JSON.stringify({ name: normalizeVettInputName(name), threshold }),
         signal: controller.signal,
       });
     } catch (error) {
@@ -84,6 +84,74 @@ export class VettClient {
         },
       };
     }
+  }
+}
+
+const SUPPORTED_TITLES = new Set([
+  "captain",
+  "capt",
+  "colonel",
+  "col",
+  "dame",
+  "dr",
+  "general",
+  "gen",
+  "hon",
+  "judge",
+  "lady",
+  "lieutenant",
+  "lt",
+  "lord",
+  "major",
+  "maj",
+  "miss",
+  "mr",
+  "mrs",
+  "ms",
+  "mx",
+  "prof",
+  "professor",
+  "reverend",
+  "rev",
+  "sir",
+]);
+
+export function normalizeVettInputName(name: string): string {
+  const tokens = name.trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
+  let removedTitle = true;
+  while (removedTitle && tokens.length > 0) {
+    removedTitle = isTitleToken(tokens[0]);
+    if (removedTitle) {
+      tokens.shift();
+      removePunctuationOnlyToken(tokens, "start");
+    }
+  }
+
+  removedTitle = true;
+  while (removedTitle && tokens.length > 0) {
+    const lastIndex = tokens.length - 1;
+    removedTitle = isTitleToken(tokens[lastIndex]);
+    if (removedTitle) {
+      tokens.pop();
+      removePunctuationOnlyToken(tokens, "end");
+    }
+  }
+
+  return tokens.join(" ").replace(/^[,.;:]+|[,.;:]+$/g, "").trim();
+}
+
+function isTitleToken(token: string | undefined): boolean {
+  if (token === undefined) {
+    return false;
+  }
+  return SUPPORTED_TITLES.has(token.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, "").toLowerCase());
+}
+
+function removePunctuationOnlyToken(tokens: string[], side: "start" | "end"): void {
+  const index = side === "start" ? 0 : tokens.length - 1;
+  const token = tokens[index];
+  if (token !== undefined && /^[^A-Za-z0-9]+$/.test(token)) {
+    tokens.splice(index, 1);
   }
 }
 
