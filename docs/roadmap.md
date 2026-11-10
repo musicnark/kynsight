@@ -7,12 +7,12 @@
   - [X] project flow
   - [X] roadmap
   - [X] AGENTS.md
-- [ ] subject extraction logic:
-  - [ ] query the company's officers and PSC endpoints
-  - [ ] do safety checks on the returned list:
-    - [ ] error handling
-	- [ ] enforce any limits
-  - [ ] clean and format into structured data
+- [X] subject extraction logic:
+  - [X] query the company's officers and PSC endpoints
+  - [X] do safety checks on the returned list:
+    - [X] error handling
+	- [X] enforce any limits
+  - [X] clean and format into structured data
 - [ ] Vett pipeline implementation:
   - [ ] break selected subjects into individual API requests
   - [ ] implement the single local worker and bounded assessment/subject queues
