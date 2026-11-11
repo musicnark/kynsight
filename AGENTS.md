@@ -76,7 +76,7 @@ Keep implementation-specific API examples and detailed product specification out
 
 ## Remaining Verification Risks
 
-The v0 contract is frozen in `README.md`. These are implementation and provider-verification risks, not open design questions:
+The v0 contract is frozen in `docs/vett-contract-v0.md`. These are implementation and provider-verification risks, not open design questions:
 
 - The current notes say the UK sanctions dataset is not working and international datasets are used for the demo. This is an unverified external-service assumption and must be rechecked against current Vett behaviour before implementation or presentation; production use requires reliable UK sanctions coverage.
 - The Companies House and Vett request examples, threshold semantics, free-tier limits, and demo-company outcomes should be verified against current provider documentation before being treated as stable integration contracts.
