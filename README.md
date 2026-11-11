@@ -84,7 +84,7 @@ npm ci
 npm run dev
 ```
 
-`npm run dev` loads `.env`, watches `src/index.ts`, and serves on `PORT` or port `3000` by default. For a compiled run:
+`npm run dev` loads `.env`, watches `src/index.ts`, and serves on `PORT` or port `3000` by default.
 
 ### Run checks
 
@@ -98,13 +98,7 @@ The queue and integration tests use mocked upstream responses and fake clocks wh
 
 ### Verify the service
 
-Start the service with:
-
-```sh
-npm start
-```
-
-The service should now be running. You can conduct a health check via:
+You can conduct a health check via:
 
 ```sh
 curl http://localhost:3000/
@@ -276,7 +270,7 @@ curl --request POST \
 
 The Vett `threshold` determines the fuzziness of the search; a lower score will search for related or similar names, a higher score will be stricter.
 
-The expected response from this particular request returns a `POTENTIAL_MATCH`:
+The expected response from this particular request returns a `POSSIBLE_MATCH`:
 
 ```json
 {
@@ -383,7 +377,14 @@ The expected response from this particular request returns a `POTENTIAL_MATCH`:
 }
 ```
 
-## Technical Overview
+## Demo companies
+You can supply any valid company number, but here's a few to get you started:
+
+`04092583` - good first choice to test it's working
+`11564549` - with `"threshold":75`, this returns a `POSSIBLE_MATCH`, showing the intended use case
+`09446231` - a company with numerous people to be checked, good for testing queue/polling behaviour.
+
+## Technical overview
 
 ### Problem and workflow
 
@@ -484,7 +485,7 @@ Verified facts are implementation and test observations. Inferred findings descr
 - The existing API examples include provider-shaped sample payloads, but they are not evidence of current results for the documented demo companies.
 - The public documentation should not claim durable recovery, automated decisions, or verified provider coverage until those capabilities are implemented and verified.
 
-## Evidence Table
+## Evidence table
 
 | Documentation claim                                              | Evidence reference                                                                                                                                                                   |
 |------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -500,7 +501,7 @@ Verified facts are implementation and test observations. Inferred findings descr
 | Environment variables and npm commands                           | `.env.example`, `src/index.ts`, and `package.json`                                                                                                                                   |
 | Documentation migration and final pipeline scope                 | `git show f7afcac --stat`; current `README.md`, `docs/vett-contract-v0.md`, and the `AGENTS.md` contract-path update                                                                 |
 
-## Archive Documentation
+## Archive documentation
 
 The v0 contract is maintained in [`docs/archive/vett-contract-v0.md`](docs/archive/vett-contract-v0.md). That document records the contract and mandatory test matrix; this README records the confirmed post-code implementation behavior, setup workflow, evidence references, and remaining verification risks.
 
