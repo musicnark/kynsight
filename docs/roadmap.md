@@ -1,5 +1,4 @@
 ## Roadmap
-- [X] freeze v0 assessment contract and mandatory automated test matrix in `README.md`
 - [X] investigate source data returned from the two APIs
 - [X] pre-code documentation:
   - [X] architectural decisions
@@ -19,14 +18,14 @@
   - [X] implement the rate limiter, retry policy, and fake-clock test scenarios
 - [X] user response shape
 - [X] demo searches
-- [ ] post-code documentation:
-  - [ ] README
-	- [ ] what problem does KynSight solve?
-	- [ ] 60 second workflow explanation
-	- [ ] architecture/data flow
-	- [ ] how-to/get-started guide
-	- [ ] copy/paste-able examples with example responses
-	- [ ] how to run tests/type checks
-    - [ ] limitations/what's needed for a production-ready version
-  - [ ] assignment writeup
+- [X] post-code documentation:
+	- [X] README
+	- [X] what problem does KynSight solve?
+	- [X] 60 second workflow explanation
+	- [X] architecture/data flow
+	- [X] how-to/get-started guide
+	- [X] copy/paste-able examples with example requests and status semantics
+	- [X] how to run tests/type checks
+    - [X] limitations/what's needed for a production-ready version
+  - [X] assignment writeup
   
