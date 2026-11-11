@@ -115,7 +115,7 @@ curl --request POST \
   --data '{"companyNumber":"11564549"}'
 ```
 
-The expected response is:
+The expected response is `"status":"PENDING"`:
 
 ```json
 {
@@ -197,7 +197,7 @@ If an assessment is partially complete (because multiple people are being assess
 > [!NOTE]
 > This response is shortened for readability.
 
-When complete, the expected response is:
+When complete, the expected response is `"status":"COMPLETE"`:
 
 ```json
 {
@@ -380,9 +380,9 @@ The expected response from this particular request returns a `POSSIBLE_MATCH`:
 ## Demo companies
 You can supply any valid company number, but here's a few to get you started:
 
-`04092583` - good first choice to test it's working
-`11564549` - with `"threshold":75`, this returns a `POSSIBLE_MATCH`, showing the intended use case
-`09446231` - a company with numerous people to be checked, good for testing queue/polling behaviour.
+- `04092583` - good first choice to test it's working
+- `11564549` - with `"threshold":75`, this returns a `POSSIBLE_MATCH`, showing the intended use case
+- `09446231` - a company with numerous people to be checked, good for testing queue/polling behaviour.
 
 ## Technical overview
 
