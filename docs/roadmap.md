@@ -1,5 +1,4 @@
 ## Roadmap
-- [X] freeze v0 assessment contract and mandatory automated test matrix in `docs/vett-contract-v0.md`
 - [X] investigate source data returned from the two APIs
 - [X] pre-code documentation:
   - [X] architectural decisions
@@ -28,5 +27,5 @@
 	- [X] copy/paste-able examples with example requests and status semantics
 	- [X] how to run tests/type checks
     - [X] limitations/what's needed for a production-ready version
-  - [ ] assignment writeup
+  - [X] assignment writeup
   

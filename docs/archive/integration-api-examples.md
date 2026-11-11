@@ -540,4 +540,3 @@ curl --request POST \
   "message": "You have exceeded the rate limit per minute for your plan, BASIC, by the API provider"
 }
 ```
-
