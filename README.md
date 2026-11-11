@@ -4,7 +4,7 @@ KynSight is a demo compliance-screening aid for brokers and underwriters. It ret
 
 KynSight is not proof of wrongdoing and does not make automated sanctions, insurance, acceptance, or rejection decisions.
 
-## Integration Endpoints
+## Integration endpoints
 
 KynSight integrates with [Companies House](https://find-and-update.company-information.service.gov.uk/) and [Vett](https://rapidapi.com/Gorp405/api/global-sanctions-export-control-screener). The specific endpoints are as follows:
 
@@ -32,7 +32,7 @@ Vett screening:
 POST https://global-sanctions-export-control-screener.p.rapidapi.com/screen/all
 ```
 
-## Test the Integration Endpoints
+## Test the integration endpoints
 
 Set `COMPANIES_HOUSE_API_KEY` and `RAPIDAPI_KEY` in the environment before running these examples. Do _not_ commit credentials or include them in logs, fixtures, screenshots, or reports.
 
@@ -55,11 +55,15 @@ curl --request POST \
   --data '{"name":"Vladimir Potanin","threshold":85}'
 ```
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
 Use Node.js 24 and npm. The repository contains a `package-lock.json`, so `npm ci` is the preferred reproducible installation. Use `npm install` when you need npm to resolve or update dependencies locally.
+
+You will also need to provide API keys for both [Companies House](https://find-and-update.company-information.service.gov.uk/) and [Vett](https://rapidapi.com/Gorp405/api/global-sanctions-export-control-screener).
+
+Companies House does not charge for access to their API. Vett allows free access with up to 10 requests per minute, 100 per month.
 
 ### Configure the environment
 
@@ -82,22 +86,33 @@ npm run dev
 
 `npm run dev` loads `.env`, watches `src/index.ts`, and serves on `PORT` or port `3000` by default. For a compiled run:
 
+### Run checks
+
 ```sh
+npm test
+npm run typecheck
 npm run build
-npm start
 ```
+
+The queue and integration tests use mocked upstream responses and fake clocks where timing or provider limits are involved. They do not require live credentials.
 
 ### Verify the service
 
-Health check:
+Start the service with:
+
+```sh
+npm start
+```
+
+The service should now be running. You can conduct a health check via:
 
 ```sh
 curl http://localhost:3000/
 ```
 
-### Run a check
+### Run a company assessment
 
-Start an assessment:
+Start an assessment with `curl`:
 
 ```sh
 curl --request POST \
@@ -185,6 +200,9 @@ If an assessment is partially complete (because multiple people are being assess
 }
 ```
 
+> [!NOTE]
+> This response is shortened for readability.
+
 When complete, the expected response is:
 
 ```json
@@ -247,7 +265,7 @@ When complete, the expected response is:
 }
 ```
 
-You can `refresh` an assignment to re-assess, and/or assign a custom Vett `threshold`:
+You can `refresh` an assignment to re-assess a company, and/or assign a custom Vett `threshold`:
 
 ```sh
 curl --request POST \
@@ -258,7 +276,7 @@ curl --request POST \
 
 The Vett `threshold` determines the fuzziness of the search; a lower score will search for related or similar names, a higher score will be stricter.
 
-The expected response from this particular request returns a "POTENTIAL_MATCH":
+The expected response from this particular request returns a `POTENTIAL_MATCH`:
 
 ```json
 {
@@ -364,16 +382,6 @@ The expected response from this particular request returns a "POTENTIAL_MATCH":
   ]
 }
 ```
-
-### Run checks
-
-```sh
-npm test
-npm run typecheck
-npm run build
-```
-
-The queue and integration tests use mocked upstream responses and fake clocks where timing or provider limits are involved. They do not require live credentials.
 
 ## Technical Overview
 
