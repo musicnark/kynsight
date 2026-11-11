@@ -6,6 +6,8 @@ KynSight is not proof of wrongdoing and does not make automated sanctions, insur
 
 ## Integration Endpoints
 
+KynSight integrates with [Companies House](https://find-and-update.company-information.service.gov.uk/) and [Vett](https://rapidapi.com/Gorp405/api/global-sanctions-export-control-screener). The specific endpoints are as follows:
+
 Companies House company data:
 
 ```text
@@ -30,9 +32,9 @@ Vett screening:
 POST https://global-sanctions-export-control-screener.p.rapidapi.com/screen/all
 ```
 
-## Request Examples
+## Test the Integration Endpoints
 
-Set `COMPANIES_HOUSE_API_KEY` and `RAPIDAPI_KEY` in the environment before running these examples. Do not commit credentials or include them in logs, fixtures, screenshots, or reports.
+Set `COMPANIES_HOUSE_API_KEY` and `RAPIDAPI_KEY` in the environment before running these examples. Do _not_ commit credentials or include them in logs, fixtures, screenshots, or reports.
 
 Fetch PSC records from Companies House:
 
@@ -50,32 +52,8 @@ curl --request POST \
   --header "Content-Type: application/json" \
   --header "x-rapidapi-host: global-sanctions-export-control-screener.p.rapidapi.com" \
   --header "x-rapidapi-key: $RAPIDAPI_KEY" \
-  --data '{"name":"POTANIN, Vladimir","threshold":85}'
+  --data '{"name":"Vladimir Potanin","threshold":85}'
 ```
-
-## Demo Companies
-
-These company numbers are documented demo fixtures. Outcomes are intentionally left for a verified run rather than copied into the documentation:
-
-```text
-https://api.company-information.service.gov.uk/company/11564549/officers
-```
-
-Manual outcome placeholder for `11564549`: [add a verified outcome here]
-
-```text
-https://api.company-information.service.gov.uk/company/04092583/officers
-```
-
-Manual outcome placeholder for `04092583`: [add a verified outcome here]
-
-```text
-https://api.company-information.service.gov.uk/company/09446231/officers
-```
-
-Manual outcome placeholder for `09446231`: [add a verified outcome here]
-
-Demo outcomes and upstream behaviour must be rechecked against current provider responses before being treated as stable.
 
 ## Getting Started
 
@@ -128,16 +106,54 @@ curl --request POST \
   --data '{"companyNumber":"11564549"}'
 ```
 
-Force a fresh assessment. When the request is admitted, this creates a new internal assessment record and makes it the latest assessment for that company:
+The expected response is:
 
-```sh
-curl --request POST \
-  --url http://localhost:3000/assessments \
-  --header "Content-Type: application/json" \
-  --data '{"companyNumber":"11564549","refresh":true}'
+```json
+{
+  "companyNumber": "11564549",
+  "threshold": 85,
+  "status": "PENDING",
+  "partial": true,
+  "progress": {
+    "total": 1,
+    "terminal": 0,
+    "successful": 0,
+    "queued": 0,
+    "inProgress": 1
+  },
+  "subjectSelection": {
+    "individualPscCount": 1,
+    "corporatePscCount": 0,
+    "fallbackUsed": false,
+    "directorFallbackUsed": false,
+    "corporateControlChainResolved": false
+  },
+  "unresolved": [],
+  "corporatePscRecords": [],
+  "unknownPscRecords": [],
+  "subjects": [
+    {
+      "subjectId": "psc:9dzOWfHBj3fJGausOUqOMxlSwKE",
+      "subjectType": "INDIVIDUAL_PSC",
+      "name": "Mr Vladamir Potanin",
+      "roles": [
+        "psc"
+      ],
+      "confirmedPsc": true,
+      "selectionReason": "INDIVIDUAL_PSC",
+      "sourceRefs": [
+        "companies-house:psc:9dzOWfHBj3fJGausOUqOMxlSwKE"
+      ],
+      "screening": {
+        "status": "IN_PROGRESS",
+        "attempts": 1
+      }
+    }
+  ]
+}
 ```
 
-Reuse the latest assessment for the company. A pending assessment is returned as pending rather than replaced:
+Check the status of your assessment by requesting the endpoint again:
 
 ```sh
 curl --request POST \
@@ -146,18 +162,104 @@ curl --request POST \
   --data '{"companyNumber":"11564549"}'
 ```
 
-Refresh an assignment with a custom Vett threshold:
+If an assessment is partially complete (because multiple people are being assessed and/or hitting temporary rate limits), the expected response will be:
+
+```json
+{
+  "companyNumber": "09446231",
+  "threshold": 85,
+  "status": "PENDING",
+  "partial": true,
+  "progress": {
+    "total": 8,
+    "terminal": 0,
+    "successful": 0,
+    "queued": 7,
+    "inProgress": 1
+  },
+  "subjectSelection": { ... },
+  "unresolved": [ ... ],
+  "corporatePscRecords": [ ... ],
+  "unknownPscRecords": [ ... ],
+  "subjects": [ ... ]
+}
+```
+
+When complete, the expected response is:
+
+```json
+{
+  "companyNumber": "11564549",
+  "threshold": 85,
+  "status": "COMPLETE",
+  "partial": false,
+  "progress": {
+    "total": 1,
+    "terminal": 1,
+    "successful": 1,
+    "queued": 0,
+    "inProgress": 0
+  },
+  "subjectSelection": {
+    "individualPscCount": 1,
+    "corporatePscCount": 0,
+    "fallbackUsed": false,
+    "directorFallbackUsed": false,
+    "corporateControlChainResolved": false
+  },
+  "unresolved": [],
+  "corporatePscRecords": [],
+  "unknownPscRecords": [],
+  "subjects": [
+    {
+      "subjectId": "psc:9dzOWfHBj3fJGausOUqOMxlSwKE",
+      "subjectType": "INDIVIDUAL_PSC",
+      "name": "Mr Vladamir Potanin",
+      "roles": [
+        "psc"
+      ],
+      "confirmedPsc": true,
+      "selectionReason": "INDIVIDUAL_PSC",
+      "sourceRefs": [
+        "companies-house:psc:9dzOWfHBj3fJGausOUqOMxlSwKE"
+      ],
+      "screening": {
+        "status": "COMPLETE",
+        "attempts": 1,
+        "result": {
+          "input": "Vladamir Potanin",
+          "outcome": "NO_MATCH",
+          "matches": [],
+          "listDates": {
+            "OFAC": "2026-11-10",
+            "UK_OFSI": "2026-11-10",
+            "UN_SC": "2026-11-10",
+            "CSL": "unknown",
+            "EU_FSF": "2026-11-10",
+            "CANADA_SEMA": "2026-11-10",
+            "AUSTRALIA_DFAT": "2026-11-10"
+          },
+          "screenedAt": "2026-11-10T16:35:09Z"
+        }
+      }
+    }
+  ]
+}
+```
+
+You can `refresh` an assignment to re-assess, and/or assign a custom Vett `threshold`:
 
 ```sh
 curl --request POST \
   --url http://localhost:3000/assessments \
   --header "Content-Type: application/json" \
-  --data '{"companyNumber":"11564549","refresh":true, "threshold":75}'
+  --data '{"companyNumber":"11564549", "refresh":true, "threshold":75}'
 ```
 
-The application forwards the threshold to Vett. Lowering it allows lower-scoring Vett matches to qualify under the provider's matching behavior; it does not locally reinterpret provider results.
+The Vett `threshold` determines the fuzziness of the search; a lower score will search for related or similar names, a higher score will be stricter.
 
-Example result:
+The expected response from this particular request returns a "POTENTIAL_MATCH":
+
 ```json
 {
   "companyNumber": "11564549",
@@ -255,7 +357,7 @@ Example result:
             "CANADA_SEMA": "2026-11-10",
             "AUSTRALIA_DFAT": "2026-11-10"
           },
-          "screenedAt": "2026-11-10T16:48:14Z"
+          "screenedAt": "2026-11-10T16:34:29Z"
         }
       }
     }
@@ -322,15 +424,15 @@ The final Vett-pipeline diff (`f7afcac`, covering `src/assessment/service.ts`, `
 
 The demo queue uses these code-level defaults from `src/assessment/queue.ts`:
 
-| Setting | Default |
-| --- | ---: |
-| Active assessments | `1` |
-| Queued assessments | `2` |
-| Non-terminal queued subjects | `20` |
-| Vett request starts per rolling minute | `10` |
-| Vett requests per UTC month | `100` |
-| Maximum attempts | `3` |
-| Vett request timeout | `10,000 ms` |
+| Setting                                |     Default |
+|----------------------------------------|------------:|
+| Active assessments                     |         `1` |
+| Queued assessments                     |         `2` |
+| Non-terminal queued subjects           |        `20` |
+| Vett request starts per rolling minute |        `10` |
+| Vett requests per UTC month            |       `100` |
+| Maximum attempts                       |         `3` |
+| Vett request timeout                   | `10,000 ms` |
 
 The queue counts retries against the request budgets. It respects a numeric `Retry-After` value when provided and otherwise uses bounded exponential backoff with jitter. Network errors, timeouts, `429`, and `5xx` responses are retryable. Authentication, validation, and malformed successful responses are not retryable. Completed subject results remain in the assessment when later work fails.
 
@@ -340,15 +442,15 @@ When the local monthly budget is exhausted, remaining non-terminal subjects beco
 
 Every response is JSON with `Content-Type: application/json`:
 
-| Condition | HTTP status |
-| --- | ---: |
-| Pending or in-progress assessment | `202` |
-| Complete assessment, including terminal subject errors | `200` |
-| Assessment-level Companies House or Vett failure | `502` |
-| Invalid JSON or request fields | `400` |
-| Unsupported route or method | `404` |
-| Queue capacity exceeded | `503` |
-| Unexpected KynSight failure | `500` |
+| Condition                                              | HTTP status |
+|--------------------------------------------------------|------------:|
+| Pending or in-progress assessment                      |       `202` |
+| Complete assessment, including terminal subject errors |       `200` |
+| Assessment-level Companies House or Vett failure       |       `502` |
+| Invalid JSON or request fields                         |       `400` |
+| Unsupported route or method                            |       `404` |
+| Queue capacity exceeded                                |       `503` |
+| Unexpected KynSight failure                            |       `500` |
 
 The JSON domain status remains authoritative for assessment state. HTTP status is the transport signal and does not replace structured error fields.
 
@@ -364,10 +466,7 @@ Verified facts are implementation and test observations. Inferred findings descr
 - Repeated `refresh: false` requests reuse the latest company-scoped assessment, including pending records.
 - Repeated `refresh: true` requests create separate internal records.
 - Vett matches are normalized to `POSSIBLE_MATCH`; explicit empty validated results become `NO_MATCH`; malformed or contradictory responses become `VETT_MALFORMED_RESPONSE`.
-
-**Evidence-backed inference**
-
-- The final pipeline diff indicates that the previous design coupled reuse to caller-visible or caller-managed identity paths and that delayed retries could prevent other eligible subjects from progressing. The current design removes that public coupling and scans eligible subjects across queued assessments. This inference is supported by the changed service/queue/store code and the added regression tests, but the repository does not contain the original incident request.
+- The previous design coupled reuse to caller-visible or caller-managed identity paths and that delayed retries could prevent other eligible subjects from progressing. The current design removes that public coupling and scans eligible subjects across queued assessments. This inference is supported by the changed service/queue/store code and the added regression tests, but the repository does not contain the original incident request.
 
 **Open questions and limitations**
 
@@ -379,20 +478,22 @@ Verified facts are implementation and test observations. Inferred findings descr
 
 ## Evidence Table
 
-| Documentation claim | Evidence reference |
-| --- | --- |
-| Public assessment response omits `assessmentId` | `src/assessment/types.ts` (`AssessmentSnapshot`); `src/assessment/store.ts` (`snapshot()`); `test/assessment-service.test.ts` and `test/assessment-http.test.ts` assert it is absent |
-| Internal records retain IDs and mutable state | `src/assessment/types.ts` (`AssessmentRecord`); `src/assessment/store.ts` (`records`, `order`, `get()`) |
-| Latest reuse is company-scoped | `src/assessment/service.ts` (`latestForCompany()` call); `src/assessment/store.ts`; `test/assessment-service.test.ts` checks independent companies |
-| `refresh: true` creates a distinct latest record | `src/assessment/service.ts` (`refresh` branch and `store.add()`); `test/assessment-service.test.ts` covers repeated refreshes and pending refresh reuse |
-| Stored threshold is preserved on reuse | `src/assessment/service.ts`, `src/assessment/store.ts`; `test/assessment-service.test.ts` checks thresholds `85` and `75` |
-| Queue defaults and retry behavior | `src/assessment/queue.ts`; `test/assessment-queue.test.ts` and `test/assessment-http.test.ts` cover rolling limits, delayed retries, 5xx retries, and long mocked queues |
-| Vett request shape, threshold forwarding, timeout, and redaction | `src/vett/client.ts`; `test/vett-client.test.ts` |
-| Strict Vett response normalization | `src/vett/adapter.ts`; `test/vett-adapter.test.ts` |
-| HTTP routes and status mapping | `src/http/server.ts`; `test/assessment-http.test.ts` |
-| Environment variables and npm commands | `.env.example`, `src/index.ts`, and `package.json` |
-| Documentation migration and final pipeline scope | `git show f7afcac --stat`; current `README.md`, `docs/vett-contract-v0.md`, and the `AGENTS.md` contract-path update |
+| Documentation claim                                              | Evidence reference                                                                                                                                                                   |
+|------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Public assessment response omits `assessmentId`                  | `src/assessment/types.ts` (`AssessmentSnapshot`); `src/assessment/store.ts` (`snapshot()`); `test/assessment-service.test.ts` and `test/assessment-http.test.ts` assert it is absent |
+| Internal records retain IDs and mutable state                    | `src/assessment/types.ts` (`AssessmentRecord`); `src/assessment/store.ts` (`records`, `order`, `get()`)                                                                              |
+| Latest reuse is company-scoped                                   | `src/assessment/service.ts` (`latestForCompany()` call); `src/assessment/store.ts`; `test/assessment-service.test.ts` checks independent companies                                   |
+| `refresh: true` creates a distinct latest record                 | `src/assessment/service.ts` (`refresh` branch and `store.add()`); `test/assessment-service.test.ts` covers repeated refreshes and pending refresh reuse                              |
+| Stored threshold is preserved on reuse                           | `src/assessment/service.ts`, `src/assessment/store.ts`; `test/assessment-service.test.ts` checks thresholds `85` and `75`                                                            |
+| Queue defaults and retry behavior                                | `src/assessment/queue.ts`; `test/assessment-queue.test.ts` and `test/assessment-http.test.ts` cover rolling limits, delayed retries, 5xx retries, and long mocked queues             |
+| Vett request shape, threshold forwarding, timeout, and redaction | `src/vett/client.ts`; `test/vett-client.test.ts`                                                                                                                                     |
+| Strict Vett response normalization                               | `src/vett/adapter.ts`; `test/vett-adapter.test.ts`                                                                                                                                   |
+| HTTP routes and status mapping                                   | `src/http/server.ts`; `test/assessment-http.test.ts`                                                                                                                                 |
+| Environment variables and npm commands                           | `.env.example`, `src/index.ts`, and `package.json`                                                                                                                                   |
+| Documentation migration and final pipeline scope                 | `git show f7afcac --stat`; current `README.md`, `docs/vett-contract-v0.md`, and the `AGENTS.md` contract-path update                                                                 |
 
-## Documentation Status
+## Archive Documentation
 
-The v0 contract is maintained in [`docs/vett-contract-v0.md`](docs/vett-contract-v0.md). That document records the contract and mandatory test matrix; this README records the confirmed post-code implementation behavior, setup workflow, evidence references, and remaining verification risks.
+The v0 contract is maintained in [`docs/archive/vett-contract-v0.md`](docs/archive/vett-contract-v0.md). That document records the contract and mandatory test matrix; this README records the confirmed post-code implementation behavior, setup workflow, evidence references, and remaining verification risks.
+
+[Integration API examples](docs/archive/integration-api-examples.md) can also be found in the archive, which were used as response shapes to build tests around.
