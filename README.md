@@ -1,18 +1,12 @@
 # KynSight
 
-KynSight is a demo compliance-screening aid for brokers and underwriters. It retrieves company, officer, and persons-with-significant-control (PSC) records from Companies House, screens relevant people through Vett, and returns a structured report for human review.
+KynSight is a demo compliance-screening aid for brokers and underwriters. It retrieves officer and persons-with-significant-control (PSC) collections from Companies House, screens relevant people through Vett, and returns a structured report for human review. The submitted company number scopes the assessment; the current implementation does not fetch the separate Companies House company-profile endpoint.
 
 KynSight is not proof of wrongdoing and does not make automated sanctions, insurance, acceptance, or rejection decisions.
 
 ## Integration endpoints
 
 KynSight integrates with [Companies House](https://find-and-update.company-information.service.gov.uk/) and [Vett](https://rapidapi.com/Gorp405/api/global-sanctions-export-control-screener). The specific endpoints are as follows:
-
-Companies House company data:
-
-```text
-GET https://api.company-information.service.gov.uk/company/{COMPANY_NUMBER}
-```
 
 Companies House PSC data:
 
@@ -392,7 +386,7 @@ KynSight is a demo compliance-screening aid for brokers and underwriters. The wo
 
 ```text
 company number
-  -> Companies House officers and PSC collections
+  -> Companies House officer and PSC collections
   -> subject selection with source and role metadata
   -> one Vett request per selected person
   -> normalized screening result or explicit error
@@ -500,6 +494,10 @@ Verified facts are implementation and test observations. Inferred findings descr
 | HTTP routes and status mapping                                   | `src/http/server.ts`; `test/assessment-http.test.ts`                                                                                                                                 |
 | Environment variables and npm commands                           | `.env.example`, `src/index.ts`, and `package.json`                                                                                                                                   |
 | Documentation migration and final pipeline scope                 | `git show f7afcac --stat`; current `README.md`, `docs/vett-contract-v0.md`, and the `AGENTS.md` contract-path update                                                                 |
+
+## Portfolio documentation
+
+The [portfolio case study](docs/portfolio-case-study.md) gives a concise route through the problem, design decisions, evidence and limitations.
 
 ## Archive documentation
 
