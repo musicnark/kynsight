@@ -2,7 +2,7 @@
 
 ## Mission
 
-KynSight is a demo compliance-screening aid for brokers and underwriters. A user submits a company number; KynSight retrieves Companies House records, screens relevant people through Vett, and returns a structured report for human review.
+KynSight is a demo compliance-screening aid for brokers and underwriters. A user submits a company number; KynSight retrieves Companies House officer and PSC collections, screens relevant people through Vett, and returns a structured report for human review.
 
 The report must keep these categories separate:
 
@@ -16,14 +16,13 @@ This is not proof of wrongdoing and must not make automated sanctions, insurance
 ## Scope And Flow
 
 ```text
-Company number -> Companies House company/officer/PSC records -> Vett screening queue -> structured human-review report
+Company number -> Companies House officer/PSC collections -> Vett screening queue -> structured human-review report
 ```
 
 The prototype should make real upstream requests and expose the integration seams clearly. It uses process-local assessment state and has no runtime AI dependency.
 
 Primary upstream endpoints:
 
-- Companies House company: `GET https://api.company-information.service.gov.uk/company/{companyNumber}`
 - Companies House officers: `GET https://api.company-information.service.gov.uk/company/{companyNumber}/officers`
 - Companies House PSCs: `GET https://api.company-information.service.gov.uk/company/{companyNumber}/persons-with-significant-control`
 - Vett: `POST https://global-sanctions-export-control-screener.p.rapidapi.com/screen/all`

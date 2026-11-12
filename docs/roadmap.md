@@ -20,6 +20,7 @@
 - [X] demo searches
 - [X] post-code documentation:
 	- [X] README
+	- [X] portfolio case study
 	- [X] what problem does KynSight solve?
 	- [X] 60 second workflow explanation
 	- [X] architecture/data flow
