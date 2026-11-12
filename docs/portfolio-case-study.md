@@ -4,6 +4,8 @@ KynSight is a small TypeScript/Node service built to explore a realistic integra
 
 This is a demo screening aid, not a compliance decision engine. It does _not_ decide whether a person or company should be accepted, rejected, or insured, nor act as evidence of any wrongdoing.
 
+For more information, see the main [README.md](../README.md)
+
 ## The problem
 
 A screening workflow has to combine records from one source with a separate provider's name-matching service. The difficult part is not making two HTTP requests, but deciding which people should be screened, preserving where each record came from, handling incomplete control information, and making upstream failures visible without turning them into a misleading negative result.
